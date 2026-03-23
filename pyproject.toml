@@ -1,0 +1,11 @@
+[project]
+name = "pn-service"
+version = "0.1.0"
+dependencies = ["PyQt6"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["ui", "generate"]

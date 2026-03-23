@@ -1,0 +1,10 @@
+projects.csv
+user.json
+cache/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
