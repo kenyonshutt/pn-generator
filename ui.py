@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("pn-service")
         self.setFixedWidth(420)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
         self._build_ui()
 
         last = _load_last_project()
