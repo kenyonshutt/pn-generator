@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -38,7 +39,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
-    QTabWidget,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -202,7 +203,7 @@ class MainWindow(QMainWindow):
         self._refill_queued: bool = False
 
         self.setWindowTitle("pn-service")
-        self.setMinimumWidth(480)
+        self.setFixedWidth(420)
         self._build_ui()
         self._select_project(0)
 
@@ -214,12 +215,14 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setSpacing(12)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(10)
+        root.setContentsMargins(20, 16, 20, 16)
 
-        # Project selector
+        # ── Project ────────────────────────────────────────────────────
         proj_row = QHBoxLayout()
-        proj_row.addWidget(QLabel("Project:"))
+        proj_label = QLabel("Project")
+        proj_label.setObjectName("fieldLabel")
+        proj_row.addWidget(proj_label)
         self.project_combo = QComboBox()
         for p in self.projects:
             self.project_combo.addItem(p["name"])
@@ -227,104 +230,167 @@ class MainWindow(QMainWindow):
         proj_row.addWidget(self.project_combo, 1)
         root.addLayout(proj_row)
 
-        # Status label
+        # ── Status / retry (hidden when clean) ─────────────────────────
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setVisible(False)
         root.addWidget(self.status_label)
 
-        # Retry button — only visible after a blocking refill failure
         self.retry_btn = QPushButton("Retry cache refill")
         self.retry_btn.setVisible(False)
         self.retry_btn.clicked.connect(self._on_retry_refill)
         root.addWidget(self.retry_btn)
 
-        # Source-of-truth radio buttons (populated per project)
+        # ── Controls grid: source-of-truth + part type ─────────────────
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+
+        sot_label = QLabel("Source")
+        sot_label.setObjectName("fieldLabel")
+        grid.addWidget(sot_label, 0, 0)
+
         self.sot_group = QButtonGroup(self)
         self.sot_layout = QHBoxLayout()
+        self.sot_layout.setSpacing(16)
+        self.sot_layout.setContentsMargins(0, 0, 0, 0)
         sot_container = QWidget()
         sot_container.setLayout(self.sot_layout)
-        root.addWidget(sot_container)
+        grid.addWidget(sot_container, 0, 1)
 
-        # Part type dropdown
-        type_row = QHBoxLayout()
-        type_row.addWidget(QLabel("Part type:"))
+        type_label = QLabel("Part type")
+        type_label.setObjectName("fieldLabel")
+        grid.addWidget(type_label, 1, 0)
+
         self.type_combo = QComboBox()
-        type_row.addWidget(self.type_combo, 1)
-        root.addLayout(type_row)
+        grid.addWidget(self.type_combo, 1, 1)
+        grid.setColumnStretch(1, 1)
+        root.addLayout(grid)
 
-        # Tabs
-        self.tabs = QTabWidget()
-        root.addWidget(self.tabs)
+        # ── Mode toggle: New base PN vs Sub PN ─────────────────────────
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(0)
+        self._mode_group = QButtonGroup(self)
 
-        tab_a = QWidget()
-        lay_a = QVBoxLayout(tab_a)
-        lay_a.setSpacing(10)
-        self.issue_a_btn = QPushButton("Issue new base PN")
-        self.issue_a_btn.setMinimumHeight(40)
-        self.issue_a_btn.clicked.connect(self._on_issue_new)
-        lay_a.addWidget(self.issue_a_btn)
-        self.tabs.addTab(tab_a, "Option A — New base PN")
+        self._mode_new_btn = QPushButton("New base PN")
+        self._mode_new_btn.setCheckable(True)
+        self._mode_new_btn.setChecked(True)
+        self._mode_new_btn.setObjectName("modeBtn")
+        self._mode_new_btn.clicked.connect(lambda: self._set_mode("new"))
 
-        tab_b = QWidget()
-        lay_b = QVBoxLayout(tab_b)
-        lay_b.setSpacing(10)
-        base_row = QHBoxLayout()
-        base_row.addWidget(QLabel("Base PN root:"))
+        self._mode_sub_btn = QPushButton("Sub PN")
+        self._mode_sub_btn.setCheckable(True)
+        self._mode_sub_btn.setObjectName("modeBtn")
+        self._mode_sub_btn.clicked.connect(lambda: self._set_mode("sub"))
+
+        self._mode_group.addButton(self._mode_new_btn, 0)
+        self._mode_group.addButton(self._mode_sub_btn, 1)
+        mode_row.addWidget(self._mode_new_btn, 1)
+        mode_row.addWidget(self._mode_sub_btn, 1)
+        root.addLayout(mode_row)
+
+        # ── Sub PN input (hidden in New mode) ──────────────────────────
+        self._sub_row_widget = QWidget()
+        sub_row = QHBoxLayout(self._sub_row_widget)
+        sub_row.setContentsMargins(0, 0, 0, 0)
+        sub_label = QLabel("Base root")
+        sub_label.setObjectName("fieldLabel")
+        sub_row.addWidget(sub_label)
         self.base_pn_input = QLineEdit()
         self.base_pn_input.setPlaceholderText("e.g. P-000001")
-        base_row.addWidget(self.base_pn_input, 1)
-        lay_b.addLayout(base_row)
-        self.issue_b_btn = QPushButton("Issue sub PN")
-        self.issue_b_btn.setMinimumHeight(40)
-        self.issue_b_btn.clicked.connect(self._on_issue_sub)
-        lay_b.addWidget(self.issue_b_btn)
-        self.tabs.addTab(tab_b, "Option B — Sub PN")
+        sub_row.addWidget(self.base_pn_input, 1)
+        self._sub_row_widget.setVisible(False)
+        root.addWidget(self._sub_row_widget)
 
-        # Result display
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        root.addWidget(sep)
+        # ── Primary issue button ────────────────────────────────────────
+        self.issue_btn = QPushButton("Issue")
+        self.issue_btn.setObjectName("issueBtn")
+        self.issue_btn.setMinimumHeight(52)
+        self.issue_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.issue_btn.clicked.connect(self._on_issue)
+        root.addWidget(self.issue_btn)
 
-        root.addWidget(QLabel("Last issued PN:"))
+        # Keep refs for enable/disable (both modes share one button now)
+        self.issue_a_btn = self.issue_btn
+        self.issue_b_btn = self.issue_btn
+
+        # ── Result card ────────────────────────────────────────────────
+        self._result_card = QWidget()
+        self._result_card.setObjectName("resultCard")
+        card_layout = QVBoxLayout(self._result_card)
+        card_layout.setContentsMargins(16, 12, 16, 12)
+        card_layout.setSpacing(6)
+
         self.result_display = QLabel("—")
-        font = QFont()
-        font.setPointSize(20)
-        font.setFamilies(["Menlo", "Courier New", "Courier"])
-        self.result_display.setFont(font)
+        pn_font = QFont()
+        pn_font.setPointSize(22)
+        pn_font.setFamilies(["Menlo", "Courier New", "Courier"])
+        pn_font.setWeight(QFont.Weight.Medium)
+        self.result_display.setFont(pn_font)
         self.result_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_display.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        root.addWidget(self.result_display)
+        card_layout.addWidget(self.result_display)
 
-        copy_btn = QPushButton("Copy to clipboard")
+        copy_btn = QPushButton("Copy")
+        copy_btn.setObjectName("copyBtn")
+        copy_btn.setMaximumWidth(100)
         copy_btn.clicked.connect(self._copy_result)
-        root.addWidget(copy_btn)
+        copy_row = QHBoxLayout()
+        copy_row.addStretch()
+        copy_row.addWidget(copy_btn)
+        card_layout.addLayout(copy_row)
 
-        # Git log panel
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        root.addWidget(sep2)
+        root.addWidget(self._result_card)
 
+        # ── Git log ────────────────────────────────────────────────────
         git_header = QHBoxLayout()
-        git_header.addWidget(QLabel("Git"))
-        clear_log_btn = QPushButton("clear")
-        clear_log_btn.setMaximumWidth(60)
-        clear_log_btn.clicked.connect(self._clear_git_log)
+        git_label = QLabel("Git")
+        git_label.setObjectName("fieldLabel")
+        git_header.addWidget(git_label)
         git_header.addStretch()
+        clear_log_btn = QPushButton("clear")
+        clear_log_btn.setObjectName("clearBtn")
+        clear_log_btn.setMaximumWidth(52)
+        clear_log_btn.clicked.connect(self._clear_git_log)
         git_header.addWidget(clear_log_btn)
         root.addLayout(git_header)
 
         self.git_log = QPlainTextEdit()
         self.git_log.setReadOnly(True)
-        self.git_log.setMaximumHeight(120)
+        self.git_log.setFixedHeight(90)
         self.git_log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         log_font = QFont()
         log_font.setFamilies(["Menlo", "Courier New", "Courier"])
         log_font.setPointSize(10)
         self.git_log.setFont(log_font)
         root.addWidget(self.git_log)
+
+    # ------------------------------------------------------------------
+    # Mode toggle (New base PN / Sub PN)
+    # ------------------------------------------------------------------
+
+    def _set_mode(self, mode: str) -> None:
+        self._sub_row_widget.setVisible(mode == "sub")
+        self._mode_new_btn.setChecked(mode == "new")
+        self._mode_sub_btn.setChecked(mode == "sub")
+
+    def _current_mode(self) -> str:
+        return "sub" if self._mode_sub_btn.isChecked() else "new"
+
+    # ------------------------------------------------------------------
+    # Unified issue handler
+    # ------------------------------------------------------------------
+
+    def _on_issue(self) -> None:
+        if self._current_mode() == "sub":
+            self._on_issue_sub()
+        else:
+            self._on_issue_new()
 
     # ------------------------------------------------------------------
     # Project selection
@@ -392,49 +458,141 @@ class MainWindow(QMainWindow):
 
     def _apply_accent(self, hex_color: str) -> None:
         fg = _text_color_for_accent(hex_color)
+        # Derive a slightly darker shade for the card and hover states
+        c = QColor(hex_color)
+        dark = QColor.fromHsvF(
+            c.hsvHueF(),
+            min(c.hsvSaturationF() * 1.1, 1.0),
+            max(c.valueF() - 0.12, 0.0),
+        ).name()
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{
                 background-color: {hex_color};
                 color: {fg};
+                font-size: 13px;
             }}
-            QPushButton {{
-                background-color: {hex_color};
+
+            /* Field labels */
+            QLabel#fieldLabel {{
+                font-size: 11px;
+                font-weight: 600;
+                opacity: 0.75;
+            }}
+
+            /* Dropdowns and text inputs */
+            QComboBox, QLineEdit {{
+                background-color: rgba(0,0,0,0.18);
                 color: {fg};
-                border: 2px solid {fg};
-                border-radius: 4px;
-                padding: 6px 12px;
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 6px;
+                padding: 5px 8px;
+                min-height: 28px;
             }}
-            QPushButton:hover {{
+            QComboBox::drop-down {{ border: none; width: 24px; }}
+            QComboBox QAbstractItemView {{
+                background-color: {dark};
+                color: {fg};
+                selection-background-color: rgba(255,255,255,0.2);
+                border: none;
+            }}
+
+            /* Radio buttons */
+            QRadioButton {{ color: {fg}; spacing: 6px; }}
+
+            /* Mode toggle buttons */
+            QPushButton#modeBtn {{
+                background-color: rgba(0,0,0,0.18);
+                color: {fg};
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 0px;
+                padding: 6px 0px;
+                font-weight: 500;
+            }}
+            QPushButton#modeBtn:first-of-type {{
+                border-radius: 0px;
+            }}
+            QPushButton#modeBtn:checked {{
+                background-color: rgba(255,255,255,0.22);
+                font-weight: 700;
+            }}
+            QPushButton#modeBtn:hover:!checked {{
+                background-color: rgba(255,255,255,0.10);
+            }}
+
+            /* Primary issue button */
+            QPushButton#issueBtn {{
                 background-color: {fg};
                 color: {hex_color};
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
             }}
-            QPushButton:disabled {{ opacity: 0.4; }}
-            QComboBox, QLineEdit {{
+            QPushButton#issueBtn:hover {{
+                background-color: rgba(255,255,255,0.92);
+            }}
+            QPushButton#issueBtn:pressed {{
+                background-color: rgba(255,255,255,0.75);
+            }}
+            QPushButton#issueBtn:disabled {{
+                background-color: rgba(255,255,255,0.25);
+                color: rgba(0,0,0,0.35);
+            }}
+
+            /* Result card */
+            QWidget#resultCard {{
+                background-color: {dark};
+                border-radius: 10px;
+            }}
+
+            /* Copy button inside card */
+            QPushButton#copyBtn {{
                 background-color: rgba(255,255,255,0.15);
                 color: {fg};
-                border: 1px solid {fg};
-                border-radius: 3px;
-                padding: 4px;
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 5px;
+                padding: 3px 12px;
+                font-size: 11px;
             }}
-            QTabWidget::pane {{
-                border: 1px solid {fg};
-                border-radius: 4px;
+            QPushButton#copyBtn:hover {{
+                background-color: rgba(255,255,255,0.25);
             }}
-            QTabBar::tab {{
+
+            /* Retry button */
+            QPushButton#retryBtn, QPushButton {{
                 background-color: rgba(0,0,0,0.15);
                 color: {fg};
-                padding: 6px 14px;
-                border: 1px solid {fg};
-                border-bottom: none;
-                border-radius: 4px 4px 0 0;
+                border: 1px solid rgba(255,255,255,0.3);
+                border-radius: 6px;
+                padding: 5px 14px;
             }}
-            QTabBar::tab:selected {{ background-color: {hex_color}; }}
-            QLabel, QRadioButton {{ color: {fg}; }}
+            QPushButton:hover {{
+                background-color: rgba(255,255,255,0.12);
+            }}
+            QPushButton:disabled {{
+                color: rgba(255,255,255,0.3);
+            }}
+
+            /* Small clear button */
+            QPushButton#clearBtn {{
+                background-color: transparent;
+                color: {fg};
+                border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 11px;
+            }}
+            QPushButton#clearBtn:hover {{
+                background-color: rgba(255,255,255,0.1);
+            }}
+
+            /* Git log */
             QPlainTextEdit {{
                 background-color: rgba(0,0,0,0.25);
                 color: {fg};
-                border: 1px solid rgba(128,128,128,0.4);
-                border-radius: 3px;
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 6px;
             }}
         """)
 
@@ -444,15 +602,19 @@ class MainWindow(QMainWindow):
 
     def _show_error(self, msg: str) -> None:
         self.status_label.setText(f"⚠ {msg}")
-        self.status_label.setStyleSheet("color: #ff4444; font-weight: bold;")
+        self.status_label.setStyleSheet(
+            "color: #ff5555; font-weight: 600; font-size: 12px;"
+        )
+        self.status_label.setVisible(True)
 
     def _show_info(self, msg: str) -> None:
         self.status_label.setText(msg)
-        self.status_label.setStyleSheet("")
+        self.status_label.setStyleSheet("font-size: 12px; opacity: 0.8;")
+        self.status_label.setVisible(True)
 
     def _clear_status(self) -> None:
         self.status_label.setText("")
-        self.status_label.setStyleSheet("")
+        self.status_label.setVisible(False)
 
     def _set_issue_enabled(self, enabled: bool) -> None:
         self.issue_a_btn.setEnabled(enabled)
