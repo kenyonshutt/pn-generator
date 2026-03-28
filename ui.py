@@ -189,13 +189,21 @@ def _text_color_for_accent(hex_color: str) -> str:
     return "#1a1a1a" if lum > 0.45 else "#ffffff"
 
 
+def _ensure_project_files(path: str) -> None:
+    """Create pn_log.csv and next_up.json if they don't already exist."""
+    pnp = Path(path)
+    pnp.mkdir(parents=True, exist_ok=True)
+    log = pnp / "pn_log.csv"
+    if not log.exists():
+        log.write_text("pn,who,timestamp,source_of_truth\n", encoding="utf-8")
+    nxt = pnp / "next_up.json"
+    if not nxt.exists():
+        nxt.write_text(json.dumps({"next": 1}, indent=2), encoding="utf-8")
+
+
 def _validate_project_path(path: str) -> list[str]:
     pnp = Path(path)
-    return [
-        f
-        for f in ("setup.json", "pn_log.csv", "next_up.json")
-        if not (pnp / f).exists()
-    ]
+    return [] if (pnp / "setup.json").exists() else ["setup.json"]
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +225,9 @@ class MainWindow(QMainWindow):
         self._git_running: bool = False
         self._refill_worker: RefillWorker | None = None
         self._refill_queued: bool = False
+        self._dying_workers: set = (
+            set()
+        )  # workers orphaned by project switch; kept alive until finished
 
         self.setWindowTitle("pn-service")
         self.setFixedWidth(420)
@@ -430,9 +441,21 @@ class MainWindow(QMainWindow):
         self._apply_accent(proj["accent"])
         self.retry_btn.setVisible(False)
         self._git_queue.clear()
+        # If a worker is mid-run, keep it alive in _dying_workers until its
+        # thread exits — dropping the ref while running causes an abort trap.
+        if self._git_active is not None and self._git_active.isRunning():
+            dying = self._git_active
+            try:
+                dying.finished.disconnect(self._on_git_op_done)
+            except Exception:
+                pass
+            dying.finished.connect(lambda: self._dying_workers.discard(dying))
+            self._dying_workers.add(dying)
         self._git_active = None
         self._git_running = False
         self._refill_queued = False
+
+        _ensure_project_files(proj["path"])
 
         missing = _validate_project_path(proj["path"])
         if missing:
