@@ -183,6 +183,27 @@ def _save_last_project(name: str) -> None:
     USER_JSON.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _load_last_sot(project_name: str) -> str:
+    try:
+        return (
+            json.loads(USER_JSON.read_text(encoding="utf-8"))
+            .get("last_sot", {})
+            .get(project_name, "")
+        )
+    except Exception:
+        return ""
+
+
+def _save_last_sot(project_name: str, sot: str) -> None:
+    try:
+        data = json.loads(USER_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    sots = data.setdefault("last_sot", {})
+    sots[project_name] = sot
+    USER_JSON.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def _text_color_for_accent(hex_color: str) -> str:
     c = QColor(hex_color)
     lum = 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF()
@@ -494,12 +515,30 @@ class MainWindow(QMainWindow):
             self.sot_group.removeButton(btn)
             self.sot_layout.removeWidget(btn)
             btn.deleteLater()
+        try:
+            self.sot_group.buttonClicked.disconnect()
+        except Exception:
+            pass
+
+        project_name = self._current_project["name"] if self._current_project else ""
+        last_sot = _load_last_sot(project_name)
+
+        matched = False
         for i, src in enumerate(sources):
             rb = QRadioButton(src)
             self.sot_group.addButton(rb, i)
             self.sot_layout.addWidget(rb)
-            if i == 0:
+            if src == last_sot:
                 rb.setChecked(True)
+                matched = True
+        if not matched and self.sot_group.buttons():
+            self.sot_group.buttons()[0].setChecked(True)
+
+        self.sot_group.buttonClicked.connect(self._on_sot_changed)
+
+    def _on_sot_changed(self, btn: QRadioButton) -> None:
+        if self._current_project:
+            _save_last_sot(self._current_project["name"], btn.text())
 
     # ------------------------------------------------------------------
     # Accent / styling
