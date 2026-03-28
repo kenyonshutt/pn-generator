@@ -167,6 +167,22 @@ def _load_user() -> str:
         return ""
 
 
+def _load_last_project() -> str:
+    try:
+        return json.loads(USER_JSON.read_text(encoding="utf-8")).get("last_project", "")
+    except Exception:
+        return ""
+
+
+def _save_last_project(name: str) -> None:
+    try:
+        data = json.loads(USER_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data["last_project"] = name
+    USER_JSON.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def _text_color_for_accent(hex_color: str) -> str:
     c = QColor(hex_color)
     lum = 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF()
@@ -205,7 +221,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("pn-service")
         self.setFixedWidth(420)
         self._build_ui()
-        self._select_project(0)
+
+        last = _load_last_project()
+        names = [p["name"] for p in self.projects]
+        initial = names.index(last) if last in names else 0
+        if initial != 0:
+            # Setting the index fires _on_project_changed which calls _select_project.
+            self.project_combo.setCurrentIndex(initial)
+        else:
+            self._select_project(0)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -430,6 +454,8 @@ class MainWindow(QMainWindow):
 
     def _on_project_changed(self, index: int) -> None:
         self._select_project(index)
+        if 0 <= index < len(self.projects):
+            _save_last_project(self.projects[index]["name"])
 
     # ------------------------------------------------------------------
     # Dynamic widget population
